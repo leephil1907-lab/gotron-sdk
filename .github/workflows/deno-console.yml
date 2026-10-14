@@ -3,7 +3,7 @@ name: Deno Deploy Console CI
 on:
   push:
     branches:
-      - feature/deno-deploy-tron-console
+      - feature/deno-deploy-console
   pull_request:
     branches:
       - master
