@@ -16,11 +16,9 @@ A Deno-native TRON wallet application. It is a separate deployable implementatio
 2. Set the app's entrypoint to `deno/main.ts` (or deploy the `deno/` directory as the project root).
 3. Provision and assign a **Deno KV** database to the app. KV stores one-time challenges and sessions with expiration; without an assigned database, authentication cannot persist.
 4. Set environment variables in the Deno Deploy dashboard:
-   - `TRON_NETWORK=nile` for initial testnet use; set `mainnet` only after testnet checks pass.
-   - `TRON_NODE=https://nile.trongrid.io` (optional override).
-   - `TRONGRID_API_KEY` as a secret if your provider requires one.
+   - `TRONGRID_API_KEY` as a secret if your provider requires one. The app is locked to `https://api.trongrid.io` and TRON mainnet; network and node overrides are intentionally disabled.
    - `AUTH_COOKIE_SECURE=true` (default; retain this behind HTTPS).
-5. Test on a fresh TronLink wallet connected to the same network before considering mainnet.
+5. Connect TronLink to TRON mainnet only. The app blocks recognized testnet/local-node endpoints. Use a wallet with funds you can afford to transact with, and verify every transaction in TronLink.
 
 The code uses Deno Deploy's managed Deno KV integration. See Deno's official [KV deployment guide](https://docs.deno.com/deploy/reference/deno_kv/) and [environment variable docs](https://docs.deno.com/deploy/reference/env_vars_and_contexts/).
 
@@ -48,10 +46,15 @@ The app can also be connected to GitHub in the Deno Deploy dashboard for automat
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `TRON_NETWORK` | `nile` | `nile`, `shasta`, or `mainnet` |
-| `TRON_NODE` | Network-specific TRON HTTP endpoint | Endpoint for public node API |
+| `TRON_NETWORK` | Fixed to `mainnet` | Not configurable; app is mainnet-only |
+| `TRON_NODE` | `https://api.trongrid.io` | Fixed official mainnet API endpoint; overrides are disabled |
 | `TRONGRID_API_KEY` | empty | Optional TronGrid API key; stored server-side |
 | `AUTH_COOKIE_SECURE` | enabled | Set `false` only for local HTTP development |
+
+## Mainnet-only operation
+
+- The app hard-codes the TRON mainnet network and official TronGrid mainnet endpoint. There is no testnet selector or environment-variable override.
+- Wallet connection and transaction actions reject recognized Nile, Shasta, testnet, and localhost node hosts. This host check is a safety guard, not cryptographic proof of the wallet provider's chain; confirm TronLink is on mainnet before approving anything.
 
 ## Important notes
 
@@ -59,6 +62,6 @@ The app can also be connected to GitHub in the Deno Deploy dashboard for automat
 - Authentication verifies a server-generated challenge and consumes it atomically in KV. Sessions are stored by hash of the random session token and expire after 12 hours.
 - The app does not use the session as transaction authorization. Every transaction still requires an explicit wallet confirmation.
 - TRC-20 amount input is an integer in base units. Token decimals differ by contract; verify contract and decimals independently.
-- Stake 2.0 support depends on TronWeb and network support. Test with test assets before mainnet.
+- Stake 2.0 support depends on TronWeb and mainnet protocol support. Staking and unfreezing act on mainnet assets; review all details and costs in TronLink before signing.
 - Public TRON endpoints can rate-limit requests. Configure an approved provider/API key for production.
 - This implementation is added as a feature branch; it has not been deployed to a Deno Deploy account from this repository connection and live wallet testing remains required.
