@@ -54,7 +54,7 @@ The app can also be connected to GitHub in the Deno Deploy dashboard for automat
 ## Mainnet-only operation
 
 - The app hard-codes the TRON mainnet network and official TronGrid mainnet endpoint. There is no testnet selector or environment-variable override.
-- Wallet connection and transaction actions reject recognized Nile, Shasta, testnet, and localhost node hosts. This host check is a safety guard, not cryptographic proof of the wallet provider's chain; confirm TronLink is on mainnet before approving anything.
+- Wallet connection and transaction actions accept only the official `api.trongrid.io` wallet node. This strict node allowlist blocks testnet and arbitrary custom-node connections; still confirm TronLink is on mainnet before approving anything.
 
 ## Important notes
 
