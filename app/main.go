@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"html/template"
 	"log"
 	"net"
@@ -40,8 +39,7 @@ func main() {
 	}
 
 	tron := client.NewGrpcClient(node)
-	opts := []client.GrpcClientOption{client.GRPCInsecure()}
-	if err := tron.Start(opts...); err != nil {
+	if err := tron.Start(client.GRPCInsecure()); err != nil {
 		log.Fatalf("connect to TRON node %q: %v", node, err)
 	}
 	defer tron.Stop()
