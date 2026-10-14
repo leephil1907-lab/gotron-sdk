@@ -26,7 +26,7 @@ type accountResponse struct {
 	BalanceTRX   float64 `json:"balanceTRX"`
 	BalanceSUN   int64   `json:"balanceSUN"`
 	Network      string  `json:"network"`
-	Active       bool    `json:"active"`
+	HasBalance   bool    `json:"hasBalance"`
 	CheckedAtUTC string  `json:"checkedAtUtc"`
 }
 
@@ -127,7 +127,7 @@ func (s *server) account(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, accountResponse{
 			Address: parsed.String(), BalanceTRX: float64(sun) / 1_000_000,
 			BalanceSUN: sun, Network: strings.ToLower(env("TRON_NETWORK", "mainnet")),
-			Active: sun > 0, CheckedAtUTC: time.Now().UTC().Format(time.RFC3339),
+			HasBalance: sun > 0, CheckedAtUTC: time.Now().UTC().Format(time.RFC3339),
 		})
 	}
 }
@@ -203,7 +203,7 @@ const page = `<!doctype html>
 <footer><span>GoTRON Console · Open-source SDK interface</span><span><a href="/api/health">Service health ↗</a> · No transaction signing enabled</span></footer></main>
 <script>
 const form=document.querySelector('#lookup'),input=document.querySelector('#address'),button=document.querySelector('#submit'),error=document.querySelector('#error'),status=document.querySelector('#status');
-form.addEventListener('submit',async e=>{e.preventDefault();const value=input.value.trim();error.classList.remove('show');error.textContent='';button.disabled=true;button.textContent='Querying node…';status.textContent='Requesting account data…';try{const res=await fetch('/api/account?address='+encodeURIComponent(value),{headers:{Accept:'application/json'}});const data=await res.json();if(!res.ok)throw new Error(data.error||'The account lookup failed.');document.querySelector('#empty').style.display='none';document.querySelector('#result').classList.add('show');document.querySelector('#balance').innerHTML=new Intl.NumberFormat(undefined,{maximumFractionDigits:6}).format(data.balanceTRX)+' <span class="unit">TRX</span>';document.querySelector('#sun').textContent=new Intl.NumberFormat().format(data.balanceSUN)+' SUN';document.querySelector('#resultAddress').textContent=data.address;document.querySelector('#network').textContent=data.network.toUpperCase();document.querySelector('#active').textContent=data.active?'Balance above zero':'Zero balance';document.querySelector('#checked').textContent=new Date(data.checkedAtUtc).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit',timeZone:'UTC'})+' UTC';status.textContent='Account data retrieved successfully.';}catch(err){error.textContent=err.message||'Unable to query the TRON node.';error.classList.add('show');status.textContent='Lookup did not complete.';}finally{button.disabled=false;button.textContent='Inspect account ↗';}});
+form.addEventListener('submit',async e=>{e.preventDefault();const value=input.value.trim();error.classList.remove('show');error.textContent='';button.disabled=true;button.textContent='Querying node…';status.textContent='Requesting account data…';try{const res=await fetch('/api/account?address='+encodeURIComponent(value),{headers:{Accept:'application/json'}});const data=await res.json();if(!res.ok)throw new Error(data.error||'The account lookup failed.');document.querySelector('#empty').style.display='none';document.querySelector('#result').classList.add('show');document.querySelector('#balance').innerHTML=new Intl.NumberFormat(undefined,{maximumFractionDigits:6}).format(data.balanceTRX)+' <span class="unit">TRX</span>';document.querySelector('#sun').textContent=new Intl.NumberFormat().format(data.balanceSUN)+' SUN';document.querySelector('#resultAddress').textContent=data.address;document.querySelector('#network').textContent=data.network.toUpperCase();document.querySelector('#active').textContent=data.hasBalance?'Balance above zero':'Zero balance';document.querySelector('#checked').textContent=new Date(data.checkedAtUtc).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit',timeZone:'UTC'})+' UTC';status.textContent='Account data retrieved successfully.';}catch(err){error.textContent=err.message||'Unable to query the TRON node.';error.classList.add('show');status.textContent='Lookup did not complete.';}finally{button.disabled=false;button.textContent='Inspect account ↗';}});
 
 const walletState={address:'',network:'',tronWeb:null,authenticated:false};
 const $=id=>document.getElementById(id);
