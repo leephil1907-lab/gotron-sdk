@@ -11,3 +11,12 @@ Deno.test("SVG icon uses TRON red and dark background", async () => {
   assertMatch(icon, /#eb0029/);
   assertMatch(icon, /#111318/);
 });
+
+Deno.test("console is locked to TRON mainnet and has no testnet node endpoints", async () => {
+  const source = await Deno.readTextFile(new URL("./main.ts", import.meta.url));
+  assertMatch(source, /const NETWORK = "mainnet"/);
+  assertMatch(source, /const NODE = "https:\/\/api\.trongrid\.io"/);
+  assertEquals(source.includes("nile.trongrid.io"), false);
+  assertEquals(source.includes("api.shasta.trongrid.io"), false);
+  assertEquals(source.includes("TRON_NETWORK"), false);
+});
