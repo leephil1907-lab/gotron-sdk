@@ -57,7 +57,7 @@ document.querySelectorAll("[data-tab]").forEach(b=>b.addEventListener("click",()
 $("connect").addEventListener("click",connect);$("refresh").addEventListener("click",refresh);$("signIn").addEventListener("click",signIn);$("disconnect").addEventListener("click",disconnect);$("checkSession").addEventListener("click",checkSession);$("logout").addEventListener("click",logout);$("trxForm").addEventListener("submit",sendTrx);$("tokenForm").addEventListener("submit",sendToken);$("stakeForm").addEventListener("submit",stake);$("unstake").addEventListener("click",unStake);$("trackForm").addEventListener("submit",track);$("lookupForm").addEventListener("submit",lookup);
 window.addEventListener("message",ev=>{const a=ev?.data?.message?.action;if(a==="setAccount"||a==="accountsChanged"){if(state.address){disconnect();toast("Wallet account changed. Reconnect to continue.")}}if(a==="setNode"||a==="chainChanged"){if(state.address){disconnect();toast("Network changed. Reconnect and verify network.")}}});
 async function health(){try{const d=await api("/api/health");$("netLabel").textContent=d.network.toUpperCase()+" "+(d.network==="mainnet"?"MAINNET":"TESTNET");$("healthPill").textContent="Online";status("health","Configured network: "+d.network+"\nNode: "+d.node+"\nAPI reachable.","ok")}catch(e){$("healthPill").textContent="Unavailable";status("health",e.message||"Network health check failed.","err")}}
-health();
+checkSession();health();
 </script></body></html>`;
 const encoder = new TextEncoder();
 const json = (body: unknown, status=200, headers: HeadersInit={}) => new Response(JSON.stringify(body), {status,headers:{"content-type":"application/json; charset=utf-8","cache-control":"no-store","x-content-type-options":"nosniff",...headers}});
