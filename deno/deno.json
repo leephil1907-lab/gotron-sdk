@@ -1,0 +1,9 @@
+{
+  "tasks": {
+    "dev": "deno run --allow-net --allow-env --allow-read main.ts",
+    "test": "deno test --allow-net --allow-env"
+  },
+  "imports": {
+    "tronweb": "npm:tronweb@6.1.0"
+  }
+}
