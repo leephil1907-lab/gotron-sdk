@@ -6,7 +6,7 @@ A web application built on the GoTRON SDK in this repository. It includes a resp
 
 - Responsive account explorer powered by the GoTRON gRPC SDK.
 - Public account lookup with balance shown in SUN and TRX.
-- TronLink connect button, network preset checks, account-change handling, and wallet message-signing UI.
+- TronLink connect button, network preset checks, account-change handling, server-verified message signing, and expiring HttpOnly session cookies.
 - Native TRX transfers through the connected wallet.
 - TRC-20 transfers by contract address and raw token base units.
 - Stake 2.0 freeze/unfreeze actions when the connected TronWeb provider supports the required methods.
@@ -32,6 +32,7 @@ Open http://localhost:8080 in a browser where TronLink is installed and unlocked
 | `LISTEN_ADDR` | `:8080` | HTTP listen address |
 | `TRON_NETWORK` | `mainnet` | Network preset: `mainnet`, `nile`, or `shasta` |
 | `TRON_NODE` | preset node | Override the Go SDK gRPC host:port |
+| `AUTH_COOKIE_SECURE` | `true` | Set session cookies with the Secure attribute; keep enabled behind HTTPS in production |
 
 Examples:
 
@@ -45,7 +46,7 @@ Use a provider-approved endpoint and follow its API-key/TLS requirements. The ba
 ## Wallet and transaction behavior
 
 - Wallet integration requires TronLink and its injected `window.tronWeb` provider. It is not a WalletConnect implementation.
-- The sign-in action requests a message signature to demonstrate control of the connected address in the browser. It does **not** create a server-side authenticated session or authorize an account on the backend.
+- Sign-in obtains a random, single-use server challenge bound to the address and configured network. The server recovers the signer from the TRON-prefixed message signature, compares the derived Base58Check address, and issues a 12-hour HttpOnly, SameSite=Strict cookie. Challenges expire after five minutes and are consumed on verification attempts. This proves wallet control; it does not authorize transactions.
 - TRX, TRC-20, staking, and unfreeze operations are submitted through the wallet provider and require explicit wallet confirmation. Wallet/network provider behavior can differ by version.
 - TRC-20 amounts are entered in base units; the app deliberately does not guess token decimals or token authenticity.
 - Stake 2.0 methods depend on the TronWeb version and network support. Review resource type, amount, and wallet prompt before approving.
@@ -69,4 +70,4 @@ The repository's complete test suite and a live wallet transaction flow must be 
 
 ## Scope
 
-This application is a non-custodial wallet interface and account explorer, not a hosted key vault. It does not collect private keys or seed phrases. A server-side login/session system, token metadata registry, address book, persistent transaction history, WalletConnect, multi-signature workflow, and production monitoring are not included.
+This application is a non-custodial wallet interface and account explorer, not a hosted key vault. It does not collect private keys or seed phrases. Sessions and challenges are held in process memory, so active sessions are lost on restart and this implementation is intended for a single instance. Use a shared, TTL-backed session store and rate limiting before multi-instance production use. A token metadata registry, address book, persistent transaction history, WalletConnect, multi-signature workflow, and production monitoring are not included.
