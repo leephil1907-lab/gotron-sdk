@@ -19,4 +19,5 @@ Deno.test("console is locked to TRON mainnet and has no testnet node endpoints",
   assertEquals(source.includes("nile.trongrid.io"), false);
   assertEquals(source.includes("api.shasta.trongrid.io"), false);
   assertEquals(source.includes("TRON_NETWORK"), false);
+  assertMatch(source, /hostname\(\)==="api\.trongrid\.io"/);
 });
