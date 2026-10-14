@@ -111,7 +111,7 @@ async function route(req:Request):Promise<Response>{
  }
  if(method==="POST"&&path==="/api/auth/logout"){
   const token=parseCookie(req,"tron_console_session");if(token){const kv=await kvPromise;await kv.delete(["auth-session",await sha(token)])}
-  return json({authenticated:false},{headers:{"set-cookie":"tron_console_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0"+(COOKIE_SECURE?"; Secure":"")}});
+  return json({authenticated:false},200,{"set-cookie":"tron_console_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0"+(COOKIE_SECURE?"; Secure":"")});
  }
  return json({error:"Not found."},404);
 }
