@@ -2,15 +2,21 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"html/template"
 	"log"
 	"net"
 	"net/http"
+	"sync"
 	"os"
 	"strings"
+	"strconv"
 	"time"
+
+	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/fbsobreira/gotron-sdk/pkg/address"
 	"github.com/fbsobreira/gotron-sdk/pkg/client"
@@ -19,7 +25,31 @@ import (
 type server struct {
 	tron *client.GrpcClient
 	tpl  *template.Template
+	authMu sync.Mutex
+	challenges map[string]authChallenge
+	sessions map[string]authSession
 }
+
+type authChallenge struct {
+	Address string
+	Network string
+	Message string
+	Expires time.Time
+}
+
+type authSession struct {
+	Address string
+	Network string
+	Expires time.Time
+}
+
+type challengeRequest struct { Address string `json:"address"` }
+type verifyRequest struct {
+	Address string `json:"address"`
+	Nonce string `json:"nonce"`
+	Signature string `json:"signature"`
+}
+
 
 type accountResponse struct {
 	Address      string  `json:"address"`
@@ -45,11 +75,15 @@ func main() {
 	defer tron.Stop()
 
 	tpl := template.Must(template.New("index").Parse(page))
-	s := &server{tron: tron, tpl: tpl}
+	s := &server{tron: tron, tpl: tpl, challenges: make(map[string]authChallenge), sessions: make(map[string]authSession)}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /", s.home)
 	mux.HandleFunc("GET /api/health", s.health)
 	mux.HandleFunc("GET /api/account", s.account)
+	mux.HandleFunc("POST /api/auth/challenge", s.authChallenge)
+	mux.HandleFunc("POST /api/auth/verify", s.authVerify)
+	mux.HandleFunc("GET /api/auth/me", s.authMe)
+	mux.HandleFunc("POST /api/auth/logout", s.authLogout)
 
 	httpServer := &http.Server{
 		Addr:              addr,
@@ -130,6 +164,141 @@ func (s *server) account(w http.ResponseWriter, r *http.Request) {
 			HasBalance: sun > 0, CheckedAtUTC: time.Now().UTC().Format(time.RFC3339),
 		})
 	}
+}
+
+
+func (s *server) authChallenge(w http.ResponseWriter, r *http.Request) {
+	var req challengeRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid challenge request."})
+		return
+	}
+	raw := strings.TrimSpace(req.Address)
+	parsed, err := address.Base58ToAddress(raw)
+	if err != nil || !parsed.IsValid() || parsed.String() != raw {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Enter a valid TRON Base58 address."})
+		return
+	}
+	network := strings.ToLower(env("TRON_NETWORK", "mainnet"))
+	nonce, err := randomHex(32)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Unable to create an authentication challenge."})
+		return
+	}
+	message := "GoTRON Console Authentication\nAddress: " + raw + "\nNetwork: " + network + "\nNonce: " + nonce + "\nIssued At: " + time.Now().UTC().Format(time.RFC3339) + "\nThis signature only proves wallet control; it does not authorize a blockchain transaction."
+	s.authMu.Lock()
+	s.pruneAuthLocked()
+	s.challenges[nonce] = authChallenge{Address: raw, Network: network, Message: message, Expires: time.Now().Add(5 * time.Minute)}
+	s.authMu.Unlock()
+	writeJSON(w, http.StatusOK, map[string]string{"nonce": nonce, "message": message, "network": network, "expiresInSeconds": "300"})
+}
+
+func (s *server) authVerify(w http.ResponseWriter, r *http.Request) {
+	var req verifyRequest
+	if err := decodeJSON(r, &req); err != nil || req.Address == "" || req.Nonce == "" || req.Signature == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Address, nonce, and signature are required."})
+		return
+	}
+	s.authMu.Lock()
+	challenge, ok := s.challenges[req.Nonce]
+	if ok { delete(s.challenges, req.Nonce) } // Challenges are single-use, including failed attempts.
+	s.authMu.Unlock()
+	if !ok || time.Now().After(challenge.Expires) || challenge.Address != req.Address || challenge.Network != strings.ToLower(env("TRON_NETWORK", "mainnet")) {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "Authentication challenge expired or does not match this wallet and network. Request a new challenge."})
+		return
+	}
+	if !verifyTronMessageSignature(challenge.Message, req.Signature, challenge.Address) {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "Wallet signature could not be verified for this address."})
+		return
+	}
+	token, err := randomHex(32)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Unable to create a login session."})
+		return
+	}
+	expires := time.Now().Add(12 * time.Hour)
+	s.authMu.Lock()
+	s.pruneAuthLocked()
+	s.sessions[token] = authSession{Address: challenge.Address, Network: challenge.Network, Expires: expires}
+	s.authMu.Unlock()
+	http.SetCookie(w, &http.Cookie{
+		Name: "gotron_session", Value: token, Path: "/", HttpOnly: true,
+		Secure: strings.EqualFold(env("AUTH_COOKIE_SECURE", "true"), "true"),
+		SameSite: http.SameSiteStrictMode, Expires: expires, MaxAge: 12 * 60 * 60,
+	})
+	writeJSON(w, http.StatusOK, map[string]any{"authenticated": true, "address": challenge.Address, "network": challenge.Network, "expiresAtUtc": expires.UTC().Format(time.RFC3339)})
+}
+
+func (s *server) authMe(w http.ResponseWriter, r *http.Request) {
+	session, ok := s.sessionFromRequest(r)
+	if !ok {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "No active authenticated session."})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"authenticated": true, "address": session.Address, "network": session.Network, "expiresAtUtc": session.Expires.UTC().Format(time.RFC3339)})
+}
+
+func (s *server) authLogout(w http.ResponseWriter, r *http.Request) {
+	if cookie, err := r.Cookie("gotron_session"); err == nil {
+		s.authMu.Lock()
+		delete(s.sessions, cookie.Value)
+		s.authMu.Unlock()
+	}
+	http.SetCookie(w, &http.Cookie{Name: "gotron_session", Value: "", Path: "/", HttpOnly: true, Secure: strings.EqualFold(env("AUTH_COOKIE_SECURE", "true"), "true"), SameSite: http.SameSiteStrictMode, MaxAge: -1, Expires: time.Unix(1, 0)})
+	writeJSON(w, http.StatusOK, map[string]bool{"authenticated": false})
+}
+
+func (s *server) sessionFromRequest(r *http.Request) (authSession, bool) {
+	cookie, err := r.Cookie("gotron_session")
+	if err != nil { return authSession{}, false }
+	s.authMu.Lock()
+	defer s.authMu.Unlock()
+	session, ok := s.sessions[cookie.Value]
+	if !ok || time.Now().After(session.Expires) {
+		delete(s.sessions, cookie.Value)
+		return authSession{}, false
+	}
+	return session, true
+}
+
+func (s *server) pruneAuthLocked() {
+	now := time.Now()
+	for nonce, challenge := range s.challenges {
+		if now.After(challenge.Expires) { delete(s.challenges, nonce) }
+	}
+	for token, session := range s.sessions {
+		if now.After(session.Expires) { delete(s.sessions, token) }
+	}
+}
+
+func decodeJSON(r *http.Request, target any) error {
+	r.Body = http.MaxBytesReader(nil, r.Body, 16*1024)
+	defer r.Body.Close()
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	return dec.Decode(target)
+}
+
+func randomHex(size int) (string, error) {
+	buf := make([]byte, size)
+	if _, err := rand.Read(buf); err != nil { return "", err }
+	return hex.EncodeToString(buf), nil
+}
+
+// TronLink signMessageV2 signs the TRON-prefixed message digest. Recover the
+// public key and compare the derived Base58Check address; never trust client claims.
+func verifyTronMessageSignature(message, signatureHex, expectedAddress string) bool {
+	sigHex := strings.TrimPrefix(strings.TrimPrefix(signatureHex, "0x"), "0X")
+	sig, err := hex.DecodeString(sigHex)
+	if err != nil || len(sig) != 65 { return false }
+	if sig[64] >= 27 { sig[64] -= 27 }
+	if sig[64] > 1 { return false }
+	prefix := "\x19TRON Signed Message:\n" + strconv.Itoa(len(message))
+	digest := crypto.Keccak256Hash([]byte(prefix + message))
+	pub, err := crypto.SigToPub(digest.Bytes(), sig)
+	if err != nil { return false }
+	recovered := address.PubkeyToAddress(*pub)
+	return recovered.IsValid() && recovered.String() == expectedAddress
 }
 
 func defaultNode(network string) string {
@@ -215,7 +384,7 @@ function setWalletConnected(address,network,tronWeb){walletState.address=address
 async function connectWallet(){clearWalletError();try{if(!window.tronLink){throw new Error('TronLink was not detected. Install or enable the TronLink wallet, then reload this page.');}const permission=await window.tronLink.request({method:'tron_requestAccounts'});if(permission&&permission.code&&permission.code!==200){throw new Error(permission.message||'Wallet permission was not granted.');}const tw=getTronWeb()||window.tronWeb;if(!tw||!tw.defaultAddress||!tw.defaultAddress.base58){throw new Error('TronLink did not expose an active account. Unlock your wallet and try again.');}const addr=tw.defaultAddress.base58;const net=tw.fullNode&&tw.fullNode.host?tw.fullNode.host:'unknown network';const expected=(document.querySelector('.pill').textContent.match(/(MAINNET|NILE|SHASTA)/)||[])[1];const host=String(net).toLowerCase();if(expected==='NILE'&&!host.includes('nile')){throw new Error('Wrong network selected. Switch TronLink to Nile and reconnect.');}if(expected==='SHASTA'&&!host.includes('shasta')){throw new Error('Wrong network selected. Switch TronLink to Shasta and reconnect.');}if(expected==='MAINNET'&&(host.includes('nile')||host.includes('shasta'))){throw new Error('Wrong network selected. Switch TronLink to TRON mainnet and reconnect.');}setWalletConnected(addr,expected||net,tw);}catch(e){walletError(e.message||'Wallet connection failed.');$('authStatus').textContent='Wallet not connected.';}}
 function disconnectWallet(){walletState.address='';walletState.network='';walletState.tronWeb=null;walletState.authenticated=false;$('walletIndicator').textContent='Disconnected';$('walletIndicator').classList.remove('connected');$('walletSummary').textContent='No wallet connected. Your keys remain in your wallet extension.';$('connectWallet').textContent='Connect wallet ↗';$('signIn').disabled=true;$('disconnect').disabled=true;$('sendTrx').disabled=true;$('sendToken').disabled=true;$('stakeTrx').disabled=true;$('unstakeTrx').disabled=true;$('authStatus').textContent='Disconnected from this interface.';clearWalletError();}
 $('connectWallet').addEventListener('click',connectWallet);$('disconnect').addEventListener('click',disconnectWallet);
-$('signIn').addEventListener('click',async()=>{clearWalletError();try{const tw=walletState.tronWeb;if(!tw||!walletState.address)throw new Error('Connect a wallet first.');const issuedAt=new Date().toISOString();const message='GoTRON Console sign-in\nAddress: '+walletState.address+'\nNetwork: '+walletState.network+'\nIssued At: '+issuedAt+'\nPurpose: Prove wallet control for this session. No transaction is authorized.';let signature;if(tw.trx.signMessageV2){signature=await tw.trx.signMessageV2(message);}else{throw new Error('This TronLink version does not support message signing. Update the wallet and retry.');}walletState.authenticated=true;$('authStatus').textContent='Message signed by '+shortAddress(walletState.address)+'. This proves wallet control locally; it does not create a server-side login session.';$('walletSummary').textContent=walletState.address+'\nSignature: '+signature+'\nSigned message: '+message;}catch(e){walletError(e.message||'Message signing was rejected or failed.');}});
+$('signIn').addEventListener('click',async()=>{clearWalletError();try{const tw=walletState.tronWeb;if(!tw||!walletState.address)throw new Error('Connect a wallet first.');const challengeRes=await fetch('/api/auth/challenge',{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({address:walletState.address})});const challenge=await challengeRes.json();if(!challengeRes.ok)throw new Error(challenge.error||'Could not start authentication.');if(!tw.trx.signMessageV2)throw new Error('This TronLink version does not support message signing. Update the wallet and retry.');const signature=await tw.trx.signMessageV2(challenge.message);const verifyRes=await fetch('/api/auth/verify',{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({address:walletState.address,nonce:challenge.nonce,signature})});const verified=await verifyRes.json();if(!verifyRes.ok||verified.authenticated!==true)throw new Error(verified.error||'Server could not verify the wallet signature.');walletState.authenticated=true;$('authStatus').textContent='Authenticated server-side as '+shortAddress(verified.address)+'. Session expires '+verified.expiresAtUtc+'.';$('walletSummary').textContent=verified.address+'  ·  '+verified.network+'  ·  authenticated session';}catch(e){walletState.authenticated=false;walletError(e.message||'Message signing was rejected or failed.');}});
 function assertWallet(){if(!walletState.tronWeb||!walletState.address)throw new Error('Connect your TronLink wallet first.');const current=walletState.tronWeb.defaultAddress&&walletState.tronWeb.defaultAddress.base58;if(current!==walletState.address)throw new Error('The wallet account changed. Reconnect before continuing.');return walletState.tronWeb;}
 function validTronAddress(tw,a){return typeof a==='string'&&tw.isAddress(a);}
 async function watchTx(txid){$('txid').value=txid;$('txStatus').textContent='Submitted: '+txid+' · checking confirmation…';const tw=walletState.tronWeb;if(tw){for(let i=0;i<12;i++){await new Promise(r=>setTimeout(r,2500));try{const info=await tw.trx.getTransactionInfo(txid);if(info&&info.id){const result=info.receipt&&info.receipt.result?info.receipt.result:'PENDING';$('txStatus').textContent='Transaction '+result+' · block '+(info.blockNumber||'—')+' · fee '+(info.fee||0)+' SUN';$('txLink').innerHTML='<a style="color:var(--accent)" target="_blank" rel="noopener noreferrer" href="https://tronscan.org/#/transaction/'+encodeURIComponent(txid)+'">View on TronScan ↗</a>';return;}}catch(_){} }$('txStatus').textContent='Submitted transaction. Confirmation is not yet available from the wallet node; check again shortly.';}$('txLink').innerHTML='<a style="color:var(--accent)" target="_blank" rel="noopener noreferrer" href="https://tronscan.org/#/transaction/'+encodeURIComponent(txid)+'">View on TronScan ↗</a>';}
