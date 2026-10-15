@@ -295,3 +295,8 @@ This project is licensed under the LGPL-3.0 License - see the [LICENSE](LICENSE)
 - 🐛 [Issue Tracker](https://github.com/fbsobreira/gotron-sdk/issues)
 - 💬 [Discussions](https://github.com/fbsobreira/gotron-sdk/discussions)
 - 🔒 [Report a vulnerability](SECURITY.md) privately, not in a public issue
+
+
+## Deno Deploy web application
+
+A separate Deno-native TRON Console is available in [`deno/`](deno/README.md). It includes a TronLink dashboard, server-verified wallet authentication with Deno KV-backed one-time challenges and sessions, TRX/TRC-20 transfer tools, Stake 2.0 actions, transaction tracking, TRON-themed UI, and app metadata/icon. Follow the Deno README to configure a Deno Deploy app and assign a KV database. The web app is locked to TRON mainnet and the official TronGrid mainnet endpoint; it has no testnet selector or node override. This is a separate deployment target; it does not replace the Go SDK or Go application.

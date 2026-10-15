@@ -1,0 +1,28 @@
+name: Deno Deploy Console CI
+
+on:
+  push:
+    branches:
+      - feature/deno-deploy-console
+  pull_request:
+    branches:
+      - master
+
+permissions:
+  contents: read
+
+jobs:
+  deno-check-and-test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: deno
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Type-check Deno entrypoint
+        run: deno check main.ts
+      - name: Test metadata and app assets
+        run: deno task test
