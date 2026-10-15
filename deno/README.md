@@ -7,6 +7,7 @@ A Deno-native TRON wallet application. It is a separate deployable implementatio
 - TronLink connect/disconnect, network checks, account-change handling and balance refresh.
 - Server-issued wallet authentication challenge, TronWeb `verifyMessageV2` signature verification, single-use nonce consumption through Deno KV, and expiring HttpOnly/SameSite session cookies.
 - TRX account lookup, TRC-20 transfers, TRX transfers, Stake 2.0 freeze/unfreeze where the wallet provider supports them, transaction receipt lookup/polling.
+- A dedicated `/presale` landing-page experience inspired by modern token-sale layouts, adapted for TRON mainnet and TronLink with responsive hero, countdown, purchase panel, tokenomics, participation steps, and FAQ. Presale checkout remains disabled until verified sale configuration is supplied.
 - TRON-inspired dark UI, responsive dashboard, TRON red accents, SVG app icon, web manifest, Open Graph/Twitter metadata, security headers, API health endpoint.
 - Uses the TRON HTTP API; no Go runtime or gRPC client is required on Deno Deploy.
 
