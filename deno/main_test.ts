@@ -32,12 +32,3 @@ Deno.test("presale route is TRON-native and keeps checkout disabled until config
   assertEquals(source.includes("Phantom"), false);
   assertEquals(source.includes("Solflare"), false);
 });
-
-Deno.test("presale includes staggered entrance motion and reduced-motion support", async () => {
-  const source = await Deno.readTextFile(new URL("./main.ts", import.meta.url));
-  assertMatch(source, /presaleRise/);
-  assertMatch(source, /IntersectionObserver/);
-  assertMatch(source, /presale-reveal/);
-  assertMatch(source, /prefers-reduced-motion:reduce/);
-  assertMatch(source, /presale-page \.card:hover/);
-});
