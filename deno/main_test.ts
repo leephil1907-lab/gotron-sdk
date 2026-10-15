@@ -21,3 +21,14 @@ Deno.test("console is locked to TRON mainnet and has no testnet node endpoints",
   assertEquals(source.includes("TRON_NETWORK"), false);
   assertMatch(source, /hostname\(\)==="api\.trongrid\.io"/);
 });
+
+Deno.test("presale route is TRON-native and keeps checkout disabled until configuration", async () => {
+  const source = await Deno.readTextFile(new URL("./main.ts", import.meta.url));
+  assertMatch(source, /path===\"\/presale\"/);
+  assertMatch(source, /TRON MAINNET · TRX NATIVE/);
+  assertMatch(source, /Install TronLink to connect your TRON wallet/);
+  assertMatch(source, /Purchases are disabled until the verified sale contract is configured/);
+  assertMatch(source, /Sale not configured/);
+  assertEquals(source.includes("Phantom"), false);
+  assertEquals(source.includes("Solflare"), false);
+});
